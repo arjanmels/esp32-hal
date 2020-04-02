@@ -23,6 +23,7 @@ use esp32::rtccntl::clk_conf::*;
 use esp32::rtccntl::cntl::*;
 use esp32::{APB_CTRL, RTCCNTL, TIMG0};
 
+pub mod cpu;
 pub mod dfs;
 mod pll;
 pub mod watchdog;
@@ -135,6 +136,8 @@ pub enum Error {
     CalibrationTimeOut,
     CalibrationSetupError,
     InvalidRegisterValue,
+    InvalidCore,
+    CoreAlreadyRunning,
 }
 
 /// CPU/APB/REF clock source
