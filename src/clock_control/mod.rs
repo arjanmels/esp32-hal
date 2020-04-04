@@ -335,6 +335,18 @@ impl<'a> ClockControlConfig {
     pub fn get_lock_count(&self) -> dfs::Locks {
         unsafe { CLOCK_CONTROL.as_mut().unwrap().get_lock_count() }
     }
+
+    pub unsafe fn park_core(&mut self, core: u32) -> Result<(), Error> {
+        CLOCK_CONTROL.as_mut().unwrap().park_core(core)
+    }
+
+    pub fn unpark_core(&mut self, core: u32) -> Result<(), Error> {
+        unsafe { CLOCK_CONTROL.as_mut().unwrap().unpark_core(core) }
+    }
+
+    pub fn start_core(&mut self, core: u32, f: fn() -> !) -> Result<(), Error> {
+        unsafe { CLOCK_CONTROL.as_mut().unwrap().start_core(core, f) }
+    }
 }
 
 impl fmt::Debug for ClockControlConfig {
@@ -676,7 +688,7 @@ impl ClockControl {
 
     /// Initialize clock configuration
     fn init<T: Into<Hertz> + Copy>(&mut self, xtal_frequency: T) -> Result<&mut Self, Error> {
-        if (xtal_frequency.into() == XTAL_FREQUENCY_AUTO) {
+        if xtal_frequency.into() == XTAL_FREQUENCY_AUTO {
             self.xtal_frequency = match self.xtal_frequency_from_scratch() {
                 Ok(frequency) => frequency,
                 _ => DEFAULT_XTAL_FREQUENCY,
