@@ -44,10 +44,10 @@ pub static mut DEBUG_LOG: DebugLog = DebugLog {};
 #[macro_export]
 macro_rules! dprint {
     ($s:expr) => {
-        unsafe {$crate::dprint::DEBUG_LOG.write_str($s).unwrap()};
+        unsafe {$crate::console::DEBUG_LOG.write_str($s).unwrap()};
     };
     ($($arg:tt)*) => {
-        unsafe {$crate::dprint::DEBUG_LOG.write_fmt(format_args!($($arg)*)).unwrap()};
+        unsafe {$crate::console::DEBUG_LOG.write_fmt(format_args!($($arg)*)).unwrap()};
     };
 }
 
@@ -55,13 +55,13 @@ macro_rules! dprint {
 #[macro_export]
 macro_rules! dprintln {
     () => {
-        unsafe {$crate::dprint::DEBUG_LOG.write_str("\n").unwrap()};
+        unsafe {$crate::console::DEBUG_LOG.write_str("\n").unwrap()};
     };
     ($fmt:expr) => {
-        unsafe {$crate::dprint::DEBUG_LOG.write_str(concat!($fmt, "\n")).unwrap()};
+        unsafe {$crate::console::DEBUG_LOG.write_str(concat!($fmt, "\n")).unwrap()};
     };
     ($fmt:expr, $($arg:tt)*) => {
-        unsafe {$crate::dprint::DEBUG_LOG.write_fmt(format_args!(concat!($fmt, "\n"), $($arg)*)).unwrap()};
+        unsafe {$crate::console::DEBUG_LOG.write_fmt(format_args!(concat!($fmt, "\n"), $($arg)*)).unwrap()};
     };
 }
 
@@ -69,6 +69,6 @@ macro_rules! dprintln {
 #[macro_export]
 macro_rules! dflush {
     () => {
-        unsafe { while !$crate::dprint::DEBUG_LOG.is_idle() {} };
+        unsafe { while !$crate::console::DEBUG_LOG.is_idle() {} };
     };
 }
