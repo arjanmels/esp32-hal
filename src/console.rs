@@ -1,12 +1,9 @@
-//! Print debug information to UART0
+//! Print debug information to console via UART0
 //!
-//! Directly writes to the UART0 TX uart queue.
-//! This is unsafe! It is asynchronous with normal UART0 usage and
-//! interrupts are not disabled.
+//! This uses the serial module to do the writing.
 
 use esp32::{UART0};
-use crate::serial::{config::Config, *}; //NoRx, NoTx, Serial, Tx};
-// use crate::serial::*;
+use crate::serial::{config::Config, NoRx, NoTx, Serial, Tx};
 use crate::dport::Split;
 use crate::serial::config::{DataBits, Parity, StopBits};
 use core::marker::PhantomData;
@@ -19,6 +16,8 @@ pub struct Console {
 
 pub enum Error {}
 
+/// Used to help create a standard console for printout out debug messages to the default serial which
+/// most dev board support through the USB port.
 impl Console {
     pub fn begin(baud:u32) {
         let dp = unsafe { esp32::Peripherals::steal() };
@@ -107,9 +106,6 @@ macro_rules! println {
                 write!($crate::console::CONSOLE.tx, "\n").unwrap();
             }
         }
-        // writeln!(tx).unwrap();
-
-        // unsafe {$crate::console::DEBUG_LOG.write_str("\n").unwrap()};
     };
     ($fmt:expr) => {
         unsafe {
@@ -117,8 +113,6 @@ macro_rules! println {
                 writeln!($crate::console::CONSOLE.tx, $fmt).unwrap();
             }
         }
-
-        // unsafe {$crate::console::DEBUG_LOG.write_str(concat!($fmt, "\n")).unwrap()};
     };
     ($fmt:expr, $($arg:tt)*) => {
         unsafe {
@@ -126,7 +120,6 @@ macro_rules! println {
                 writeln!($crate::console::CONSOLE.tx, $fmt, $($arg)*).unwrap();
             }
         }
-        //unsafe {$crate::console::DEBUG_LOG.write_fmt(format_args!(concat!($fmt, "\n"), $($arg)*)).unwrap()};
     };
 }
 
@@ -139,6 +132,5 @@ macro_rules! flush {
                 $crate::console::CONSOLE.flush().unwrap();
             }
         }
-        // unsafe { while !$crate::console::DEBUG_LOG.is_idle() {} };
     };
 }
