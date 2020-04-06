@@ -14,4 +14,4 @@ pub mod serial;
 pub mod units;
 
 #[macro_use]
-pub mod dprint;
+pub mod console;
