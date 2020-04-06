@@ -4,17 +4,23 @@
 //! This is unsafe! It is asynchronous with normal UART0 usage and
 //! interrupts are not disabled.
 
-use esp32::UART0;
-use crate::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32::{UART0};
+use crate::serial::{config::Config, *}; //NoRx, NoTx, Serial, Tx};
+// use crate::serial::*;
 use crate::dport::Split;
 use crate::serial::config::{DataBits, Parity, StopBits};
+use core::marker::PhantomData;
+use embedded_hal::serial::Write;
 
-pub struct DebugLog {}
+pub struct Console {
+    pub started:bool,
+    pub tx:Tx<UART0>
+}
 
 pub enum Error {}
 
-impl DebugLog {
-    pub fn begin(baud:u32){
+impl Console {
+    pub fn begin(baud:u32) {
         let dp = unsafe { esp32::Peripherals::steal() };
 
         let (mut dport, dport_clock_control) = dp.DPORT.split();
@@ -29,7 +35,7 @@ impl DebugLog {
 
         let (clkcntrl_config, _watchdog) = clkcntrl.freeze().unwrap();
 
-        let _serial = Serial::uart0(
+        let serial = Serial::uart0(
             dp.UART0,
             (NoTx, NoRx),
             Config {
@@ -41,27 +47,25 @@ impl DebugLog {
             clkcntrl_config,
             &mut dport,
         ).unwrap();
-    }
 
-    pub fn count(&mut self) -> u8 {
-        unsafe { (*UART0::ptr()).status.read().txfifo_cnt().bits() }
-    }
-
-    pub fn is_idle(&mut self) -> bool {
-        unsafe { (*UART0::ptr()).status.read().st_utx_out().is_tx_idle() }
-    }
-
-    pub fn write(&mut self, byte: u8) -> nb::Result<(), Error> {
-        if self.count() < 128 {
-            unsafe { (*UART0::ptr()).tx_fifo.write_with_zero(|w| w.bits(byte)) }
-            Ok(())
-        } else {
-            Err(nb::Error::WouldBlock)
+        let (tx, _rx) = serial.split();
+        unsafe {
+            CONSOLE.tx = tx;
+            CONSOLE.started = true;
         }
+    }
+    pub fn count(&mut self) -> u8 {
+        self.tx.count()
+    }
+    pub fn flush(&mut self) -> nb::Result<(), core::convert::Infallible> {
+        self.tx.flush()
+    }
+    pub fn write(&mut self, byte: u8) -> nb::Result<(), core::convert::Infallible> {
+        self.tx.write(byte)
     }
 }
 
-impl core::fmt::Write for DebugLog {
+impl core::fmt::Write for Console {
     fn write_str(&mut self, s: &str) -> core::fmt::Result {
         s.as_bytes()
             .iter()
@@ -70,37 +74,71 @@ impl core::fmt::Write for DebugLog {
     }
 }
 
-pub static mut DEBUG_LOG: DebugLog = DebugLog {};
+/// Serial transmitter
+pub static mut CONSOLE: Console = Console {started:false, tx: Tx {
+    _uart: PhantomData,
+    _apb_lock: None
+}};
 
-/// Macro for sending a formatted string to UART0 for debugging
+/// Macro for sending a formatted string to console (via UART0) for debugging
 #[macro_export]
-macro_rules! dprint {
+macro_rules! print {
     ($s:expr) => {
-        unsafe {$crate::console::DEBUG_LOG.write_str($s).unwrap()};
+        unsafe {
+            if $crate::console::CONSOLE.started {
+                write!($crate::console::CONSOLE.tx, $s).unwrap();
+            }
+        }
+        // unsafe {$crate::serial:: console::DEBUG_LOG.write_str($s).unwrap()};
     };
     ($($arg:tt)*) => {
-        unsafe {$crate::console::DEBUG_LOG.write_fmt(format_args!($($arg)*)).unwrap()};
+        write!($crate::console::CONSOLE.tx, $($arg)*).unwrap();
+
+        // unsafe {$crate::console::DEBUG_LOG.write_fmt(format_args!($($arg)*)).unwrap()};
     };
 }
 
-/// Macro for sending a formatted string to UART0 for debugging, with a newline.
+/// Macro for sending a formatted string to the console (via UART0) for debugging, with a newline.
 #[macro_export]
-macro_rules! dprintln {
+macro_rules! println {
     () => {
-        unsafe {$crate::console::DEBUG_LOG.write_str("\n").unwrap()};
+        unsafe {
+            if $crate::console::CONSOLE.started {
+                write!($crate::console::CONSOLE.tx, "\n").unwrap();
+            }
+        }
+        // writeln!(tx).unwrap();
+
+        // unsafe {$crate::console::DEBUG_LOG.write_str("\n").unwrap()};
     };
     ($fmt:expr) => {
-        unsafe {$crate::console::DEBUG_LOG.write_str(concat!($fmt, "\n")).unwrap()};
+        unsafe {
+            if $crate::console::CONSOLE.started {
+                writeln!($crate::console::CONSOLE.tx, $fmt).unwrap();
+            }
+        }
+
+        // unsafe {$crate::console::DEBUG_LOG.write_str(concat!($fmt, "\n")).unwrap()};
     };
     ($fmt:expr, $($arg:tt)*) => {
-        unsafe {$crate::console::DEBUG_LOG.write_fmt(format_args!(concat!($fmt, "\n"), $($arg)*)).unwrap()};
+        unsafe {
+            if $crate::console::CONSOLE.started {
+                writeln!($crate::console::CONSOLE.tx, $fmt, $($arg)*).unwrap();
+            }
+        }
+        //unsafe {$crate::console::DEBUG_LOG.write_fmt(format_args!(concat!($fmt, "\n"), $($arg)*)).unwrap()};
     };
 }
 
-/// Macro for sending a formatted string to UART0 for debugging, with a newline.
+/// Macro for flushing the console (via UART0).
 #[macro_export]
-macro_rules! dflush {
+macro_rules! flush {
     () => {
-        unsafe { while !$crate::console::DEBUG_LOG.is_idle() {} };
+        unsafe {
+            if $crate::console::CONSOLE.started {
+                $crate::console::CONSOLE.flush().unwrap();
+            }
+        }
+        // unsafe { while !$crate::console::DEBUG_LOG.is_idle() {} };
     };
 }

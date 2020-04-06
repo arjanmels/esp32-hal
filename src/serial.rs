@@ -167,8 +167,8 @@ pub struct Rx<UART> {
 
 /// Serial transmitter
 pub struct Tx<UART> {
-    _uart: PhantomData<UART>,
-    _apb_lock: Option<crate::clock_control::dfs::LockAPB>,
+    pub _uart: PhantomData<UART>,
+    pub _apb_lock: Option<crate::clock_control::dfs::LockAPB>,
 }
 
 macro_rules! halUart {
