@@ -192,7 +192,7 @@ impl<'a> super::ClockControl {
 
         // TODO: implement actual locking
         unimplemented!();
-        LockAwake {}
+//        LockAwake {}
     }
 
     /// unlock from the awake state

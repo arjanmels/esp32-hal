@@ -101,6 +101,7 @@ const DELAY_8M_ENABLE: MicroSeconds = MicroSeconds(50);
 const DELAY_DBIAS_RAISE: MicroSeconds = MicroSeconds(3);
 
 // number of wait cycles when enabling 8MHz clock
+#[allow(dead_code)]
 const CK8M_WAIT_DEFAULT: u8 = 20;
 
 // Bias voltages for various clock speeds
@@ -179,6 +180,7 @@ enum CalibrateRTCSource {
     /// Slow RTC Source
     SlowRTC,
     /// Low frequency Xtal (32kHz)
+    #[allow(dead_code)]
     Xtal32k,
     /// 8MHz internal oscillator (divided by 256)
     RTC8MD256,
@@ -403,7 +405,7 @@ pub struct ClockControl {
     cpu_source_locked: CPUSource,
     cpu_frequency_apb_locked: Hertz,
     cpu_source_apb_locked: CPUSource,
-    light_sleep_enabled: bool,
+    _light_sleep_enabled: bool,
 
     apb_frequency_apb_locked: Hertz,
 
@@ -460,7 +462,7 @@ impl ClockControl {
             cpu_source_locked: CPU_SOURCE_LOCKED_DEFAULT,
             cpu_frequency_apb_locked: CPU_FREQ_APB_DEFAULT,
             cpu_source_apb_locked: CPU_SOURCE_APB_LOCKED_DEFAULT,
-            light_sleep_enabled: false,
+            _light_sleep_enabled: false,
 
             apb_frequency_apb_locked: APB_FREQ_PLL,
 
@@ -512,6 +514,7 @@ impl ClockControl {
     }
 
     /// Check if 8MHz oscillator is enabled
+    #[allow(dead_code)]
     fn is_rtc8md256_enabled(&self) -> bool {
         self.rtc_control
             .clk_conf
@@ -521,6 +524,7 @@ impl ClockControl {
     }
 
     /// Enable 8MHz oscillator
+    #[allow(dead_code)]
     fn rtc8m_enable(&mut self) -> &mut Self {
         self.rtc_control
             .clk_conf
@@ -553,6 +557,7 @@ impl ClockControl {
     }
 
     /// Disable 8MHz/256
+    #[allow(dead_code)]
     fn rtc8md256_disable(&mut self) -> &mut Self {
         self.rtc_control
             .clk_conf
@@ -564,6 +569,7 @@ impl ClockControl {
     }
 
     /// Disable 8MHz oscillator (and therefore also 8MHz/256)
+    #[allow(dead_code)]
     fn rtc8m_disable(&mut self) -> &mut Self {
         self.rtc_control
             .clk_conf

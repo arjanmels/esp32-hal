@@ -1,5 +1,9 @@
 //! Print debug information to console via UART0
-//!
+//! Usage:
+//! use esp32_hal::println;
+//! use esp32_hal::console::Console;
+//!  Console::begin(19200);
+//!  println!("Hellgit");
 //! This uses the serial module to do the writing.
 
 use esp32::{UART0};
@@ -85,15 +89,14 @@ macro_rules! print {
     ($s:expr) => {
         unsafe {
             if $crate::console::CONSOLE.started {
+                use core::fmt::Write;
                 write!($crate::console::CONSOLE.tx, $s).unwrap();
             }
         }
-        // unsafe {$crate::serial:: console::DEBUG_LOG.write_str($s).unwrap()};
     };
     ($($arg:tt)*) => {
+        use core::fmt::Write;
         write!($crate::console::CONSOLE.tx, $($arg)*).unwrap();
-
-        // unsafe {$crate::console::DEBUG_LOG.write_fmt(format_args!($($arg)*)).unwrap()};
     };
 }
 
@@ -103,6 +106,7 @@ macro_rules! println {
     () => {
         unsafe {
             if $crate::console::CONSOLE.started {
+                use core::fmt::Write;
                 write!($crate::console::CONSOLE.tx, "\n").unwrap();
             }
         }
@@ -110,6 +114,7 @@ macro_rules! println {
     ($fmt:expr) => {
         unsafe {
             if $crate::console::CONSOLE.started {
+                use core::fmt::Write;
                 writeln!($crate::console::CONSOLE.tx, $fmt).unwrap();
             }
         }
@@ -117,6 +122,7 @@ macro_rules! println {
     ($fmt:expr, $($arg:tt)*) => {
         unsafe {
             if $crate::console::CONSOLE.started {
+                use core::fmt::Write;
                 writeln!($crate::console::CONSOLE.tx, $fmt, $($arg)*).unwrap();
             }
         }
