@@ -5,12 +5,44 @@
 //! interrupts are not disabled.
 
 use esp32::UART0;
+use crate::serial::{config::Config, NoRx, NoTx, Serial};
+use crate::dport::Split;
+use crate::serial::config::{DataBits, Parity, StopBits};
 
 pub struct DebugLog {}
 
 pub enum Error {}
 
 impl DebugLog {
+    pub fn begin(baud:u32){
+        let dp = unsafe { esp32::Peripherals::steal() };
+
+        let (mut dport, dport_clock_control) = dp.DPORT.split();
+
+        let clkcntrl = crate::clock_control::ClockControl::new(
+            dp.RTCCNTL,
+            dp.APB_CTRL,
+            dport_clock_control,
+            crate::clock_control::XTAL_FREQUENCY_AUTO,
+        )
+            .unwrap();
+
+        let (clkcntrl_config, _watchdog) = clkcntrl.freeze().unwrap();
+
+        let _serial = Serial::uart0(
+            dp.UART0,
+            (NoTx, NoRx),
+            Config {
+                baudrate: crate::units::Hertz(baud),
+                data_bits: DataBits::DataBits8,
+                parity: Parity::ParityNone,
+                stop_bits: StopBits::STOP1,
+            }, // default configuration is 19200 baud, 8 data bits, 1 stop bit & no parity (8N1)
+            clkcntrl_config,
+            &mut dport,
+        ).unwrap();
+    }
+
     pub fn count(&mut self) -> u8 {
         unsafe { (*UART0::ptr()).status.read().txfifo_cnt().bits() }
     }

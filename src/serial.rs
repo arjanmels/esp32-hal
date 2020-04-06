@@ -321,7 +321,7 @@ macro_rules! halUart {
                             self.apb_lock=Some(self.clock_control.lock_apb_frequency());
                         }
                     } else {
-                        if (!use_apb_frequency) {
+                        if !use_apb_frequency {
                             self.apb_lock=None;
                         }
                     }
