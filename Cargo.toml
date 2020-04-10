@@ -16,13 +16,23 @@ panic-halt = "0.2.0"
 spin = "0.5"
 
 [[example]]
+name = "bitbang"
+
+[[example]]
 name = "blinky"
 
 [[example]]
-name = "serial"
+name = "button"
+
+[[example]]
+name = "hello"
+
+[[example]]
+name = "multicore"
 
 [[example]]
 name = "rtccntl"
 
 [[example]]
-name = "multicore"
+name = "serial"
+

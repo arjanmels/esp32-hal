@@ -29,7 +29,8 @@ fn main() -> ! {
     disable_rtc_wdt(&mut rtccntl);
 
     let pins = dp.GPIO.split();
-    let mut led = pins.gpio2.into_open_drain_output();
+    let mut led = pins.gpio2.into_push_pull_output(); // An open drain or push pull may be used in this instance (next line).
+    // let mut led = pins.gpio2.into_open_drain_output();
 
     loop {
         led.set_high().unwrap();

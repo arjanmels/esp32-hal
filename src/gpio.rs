@@ -41,6 +41,10 @@ pub struct Output<MODE> {
     _mode: PhantomData<MODE>,
 }
 
+/// Output mode (type state)
+pub struct InputOutput<MODE> {
+    _mode: PhantomData<MODE>,
+}
 /// Alternate function
 pub struct Alternate<MODE> {
     _mode: PhantomData<MODE>,
@@ -141,8 +145,8 @@ gpio! {
 }
 
 macro_rules! impl_output {
-    ($en:ident, $outs:ident, $outc:ident, [
-        // index, gpio pin name, funcX name, iomux pin name
+    ($en:ident, $outs:ident, $outc:ident, $reg:ident, $reader:ident, [
+        // index, gpio_xx pin name, funcX name, iomux pin name
         $($pxi:ident: ($i:expr, $pin:ident, $funcXout:ident, $iomux:ident),)+
     ]) => {
         $(
@@ -159,6 +163,33 @@ macro_rules! impl_output {
                     // NOTE(unsafe) atomic write to a stateless register
                     unsafe { (*GPIO::ptr()).$outc.write(|w| w.bits(1 << $i)) };
                     Ok(())
+                }
+            }
+
+            impl<MODE> OutputPin for $pxi<InputOutput<MODE>> {
+                type Error = Infallible;
+
+                fn set_high(&mut self) -> Result<(), Self::Error> {
+                    // NOTE(unsafe) atomic write to a stateless register
+                    unsafe { (*GPIO::ptr()).$outs.write(|w| w.bits(1 << $i)) };
+                    Ok(())
+                }
+
+                fn set_low(&mut self) -> Result<(), Self::Error> {
+                    // NOTE(unsafe) atomic write to a stateless register
+                    unsafe { (*GPIO::ptr()).$outc.write(|w| w.bits(1 << $i)) };
+                    Ok(())
+                }
+            }
+            impl<MODE> InputPin for $pxi<InputOutput<MODE>> {
+                type Error = Infallible;
+
+                fn is_high(&self) -> Result<bool, Self::Error> {
+                    Ok(unsafe {& *GPIO::ptr() }.$reg.read().$reader().bits() & (1 << $i) != 0)
+                }
+
+                fn is_low(&self) -> Result<bool, Self::Error> {
+                    Ok(!self.is_high()?)
                 }
             }
 
@@ -200,7 +231,7 @@ macro_rules! impl_output {
                     $pxi { _mode: PhantomData }
                 }
 
-                pub fn into_open_drain_output(self) -> $pxi<Output<OpenDrain>> {
+                pub fn into_open_drain_output(self) -> $pxi<InputOutput<OpenDrain>> {
                     let gpio = unsafe{ &*GPIO::ptr() };
                     let iomux = unsafe{ &*IO_MUX::ptr() };
                     self.disable_analog();
@@ -257,7 +288,7 @@ macro_rules! impl_output {
 }
 
 impl_output! {
-    enable_w1ts, out_w1ts, out_w1tc, [
+    enable_w1ts, out_w1ts, out_w1tc, in_, in_data, [
         Gpio0: (0, pin0, func0_out_sel_cfg, gpio0),
         Gpio1: (1, pin1, func1_out_sel_cfg, u0txd),
         Gpio2: (2, pin2, func2_out_sel_cfg, gpio2),
@@ -289,7 +320,7 @@ impl_output! {
 }
 
 impl_output! {
-    enable1_w1ts, out1_w1ts, out1_w1tc, [
+    enable1_w1ts, out1_w1ts, out1_w1tc, in_, in_data, [
         Gpio32: (0, pin32, func32_out_sel_cfg, gpio32),
         Gpio33: (1, pin33, func33_out_sel_cfg, gpio33),
         /* Deliberately omitting 34-39 as these can *only* be inputs */
@@ -342,7 +373,7 @@ macro_rules! impl_pullup_pulldown {
 
 macro_rules! impl_input {
     ($en:ident, $reg:ident, $reader:ident [
-        // index, gpio pin name, funcX name, iomux pin name, has pullup/down resistors
+        // index, gpio_xx pin name, funcX name, iomux pin name, has pullup/down resistors
         $($pxi:ident: ($i:expr, $pin:ident, $funcXin:ident, $iomux:ident, $resistors:ident),)+
     ]) => {
         $(
