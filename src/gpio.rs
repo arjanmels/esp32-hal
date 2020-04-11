@@ -20,7 +20,6 @@ pub struct Input<MODE> {
 
 /// Floating input (type state)
 pub struct Floating;
-
 /// Pulled down input (type state)
 pub struct PullDown;
 
@@ -32,6 +31,8 @@ pub struct OpenDrain;
 
 /// Push pull output (type state)
 pub struct PushPull;
+
+
 
 /// Analog mode (type state)
 pub struct Analog;

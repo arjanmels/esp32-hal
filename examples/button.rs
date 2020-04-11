@@ -6,7 +6,6 @@ use core::panic::PanicInfo;
 use esp32_hal::prelude::*;
 use esp32_hal::println;
 use esp32_hal::console::Console;
-use esp32_hal::gpio::{Input, PullDown, PushPull, Output};
 
 #[no_mangle]
 fn main() -> ! {
@@ -15,8 +14,8 @@ fn main() -> ! {
     Console::begin(19200);
 
     let gpios = dp.GPIO.split();
-    let mut blinky:Output<PushPull> = gpios.gpio2.into_push_pull_output();
-    let button:Input<PullDown> = gpios.gpio15.into_pull_down_input(); // Button will pull high.
+    let mut blinky:esp32_hal::gpio::Gpio2<esp32_hal::gpio::Output<_>> = gpios.gpio2.into_push_pull_output();
+    let button:esp32_hal::gpio::Gpio15<esp32_hal::gpio::Input<esp32_hal::gpio::PullDown>> = gpios.gpio15.into_pull_down_input(); // Button will pull high.
 
 
     println!("Monitoring button. Press it the led will follow it, and it will print 'button pushed.' on the serial.");

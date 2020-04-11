@@ -9,9 +9,6 @@ use esp32_hal::console::Console;
 use embedded_hal::digital::v2::{OutputPin,InputPin};
 use xtensa_lx6_rt::get_cycle_count;
 use nb::Result;
-use esp32_hal::gpio::{InputOutput, PushPull, Output, OpenDrain};
-// use esp32_hal::gpio_xx::{Gpio2, Output, PushPull, Gpio15};
-// use esp32_hal::gpio_xx::{Gpio2, Output, PushPull, Gpio3};
 
 /// The default clock source is the onboard crystal
 /// In most cases 40mhz (but can be as low as 2mhz depending on the board)
@@ -84,16 +81,20 @@ fn main() -> ! {
     Console::begin(19200);
 
     let gpios = dp.GPIO.split();
-    let mut sys_led:Output<PushPull> = gpios.gpio2.into_push_pull_output();
-    let mut button_with_led:InputOutput<OpenDrain> = gpios.gpio15.into_open_drain_output();
+//    let mut sys_led:Output<PushPull> = gpios.gpio2.into_push_pull_output();
+//    let mut button_with_led:InputOutput<OpenDrain> = gpios.gpio15.into_open_drain_output();
+    let mut sys_led= gpios.gpio2.into_push_pull_output();
+    let mut button_with_led:esp32_hal::gpio::Gpio15<esp32_hal::gpio::InputOutput<esp32_hal::gpio::OpenDrain>> = gpios.gpio15.into_open_drain_output();
 
-    // let mut v = gpios.gpio18.into_pull_down();
+    //let mut v:esp32_hal::gpio::Gpio18<esp32_hal::gpio::Input<esp32_hal::gpio::PullDown>> = gpios.gpio18.into_pull_down_input();
     // let mut w = gpios.gpio20.into_push_pull_start_low();
     // let mut x = gpios.gpio21.into_pull_up();
     // let mut y = gpios.gpio22.into_floating();
     // let mut z = gpios.gpio23.into_open_drain();
 
     let mut flasher = ButtonFlasher::new(sys_led, button_with_led);
+    flasher.sys_led.set_high().unwrap();
+
     println!("Monitoring button. Press it and the led connected to the same pin will blink twice.");
     loop {
         flasher.watch().unwrap();
