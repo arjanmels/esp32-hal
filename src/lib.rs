@@ -12,6 +12,10 @@ pub mod gpio;
 pub mod prelude;
 pub mod serial;
 pub mod units;
+pub mod watchdog_disabler;
 
 #[macro_use]
 pub mod dprint;
+
+#[macro_use]
+pub mod console;
