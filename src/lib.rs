@@ -23,6 +23,7 @@ pub use embedded_hal as hal;
 pub use esp32;
 
 extern crate esp32_hal_proc_macros as proc_macros;
+pub use proc_macros::interrupt;
 pub use proc_macros::ram;
 
 pub mod analog;
@@ -32,6 +33,7 @@ pub mod efuse;
 #[cfg(feature = "external_ram")]
 pub mod external_ram;
 pub mod gpio;
+pub mod interrupt;
 pub mod prelude;
 pub mod serial;
 pub mod units;
@@ -80,4 +82,24 @@ pub unsafe extern "C" fn ESP32Reset() -> ! {
 
     // continue with default reset handler
     xtensa_lx6_rt::Reset();
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Core {
+    PRO = 0,
+    APP = 1,
+}
+
+pub fn get_core() -> Core {
+    match ((xtensa_lx6_rt::get_processor_id() >> 13) & 1) != 0 {
+        false => Core::PRO,
+        true => Core::APP,
+    }
+}
+
+pub fn get_other_core() -> Core {
+    match get_core() {
+        Core::PRO => Core::APP,
+        Core::APP => Core::PRO,
+    }
 }

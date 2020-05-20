@@ -11,56 +11,105 @@ use esp32_hal::prelude::*;
 use esp32_hal::clock_control::{sleep, CPUSource::PLL, ClockControl};
 use esp32_hal::dport::Split;
 use esp32_hal::dprintln;
+use esp32_hal::interrupt::{Interrupt, Interrupt::*, InterruptLevel};
 use esp32_hal::serial::{config::Config, NoRx, NoTx, Serial};
+use esp32_hal::Core::PRO;
 
 static TX: spin::Mutex<Option<esp32_hal::serial::Tx<esp32::UART0>>> = spin::Mutex::new(None);
 
+#[interrupt]
+fn FROM_CPU_INTR0() {
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  FROM_CPU_INTR0, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
+    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
+}
+
+#[interrupt]
+fn FROM_CPU_INTR1() {
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  Start FROM_CPU_INTR1, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
+    interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
+    interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR2).unwrap();
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  End FROM_CPU_INTR1, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
+    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR1).unwrap();
+}
+
+#[interrupt]
+fn FROM_CPU_INTR2() {
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  FROM_CPU_INTR2, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
+    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR2).unwrap();
+}
+
+#[interrupt]
+fn FROM_CPU_INTR3() {
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  FROM_CPU_INTR3, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
+    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+}
+
+#[interrupt(INTERNAL_SOFTWARE_LEVEL_3_INTR)]
+fn software_level_3() {
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  INTERNAL_SOFTWARE_LEVEL_3_INTR, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
+    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+}
+
+#[interrupt(INTERNAL_SOFTWARE_LEVEL_1_INTR)]
+fn random_name() {
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "  INTERNAL_SOFTWARE_LEVEL_1_INTR, level: {}",
+        xtensa_lx6_rt::interrupt::get_level()
+    )
+    .unwrap();
+    interrupt::clear_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+}
+
 #[exception]
 #[ram]
-fn other_exception2(cause: xtensa_lx6_rt::exception::ExceptionCause) {
-    writeln!(TX.lock().as_mut().unwrap(), "Exception {:?}", cause).unwrap();
-    //unsafe { asm!("quos $0,$0,$0":"+r"(0)) }
+fn other_exception(
+    cause: xtensa_lx6_rt::exception::ExceptionCause,
+    frame: xtensa_lx6_rt::exception::Context,
+) {
+    writeln!(
+        TX.lock().as_mut().unwrap(),
+        "Exception {:?}, {:08x?}",
+        cause,
+        frame
+    )
+    .unwrap();
     loop {}
-}
-
-#[interrupt(1)]
-#[ram]
-fn interrupt_level_1(level: u32) {
-    xtensa_lx6_rt::interrupt::get();
-    unsafe {
-        xtensa_lx6_rt::interrupt::clear(1 << 7);
-    }
-    writeln!(TX.lock().as_mut().unwrap(), "Interrupt {} Start", level).unwrap();
-    unsafe {
-        //   xtensa_lx6_rt::interrupt::set(1 << 29);
-    }
-    writeln!(TX.lock().as_mut().unwrap(), "Interrupt {} End", level).unwrap();
-}
-
-#[interrupt(3)]
-#[ram]
-fn interrupt_level_3(level: u32) {
-    xtensa_lx6_rt::interrupt::get();
-    unsafe {
-        xtensa_lx6_rt::interrupt::clear(1 << 29);
-    }
-    writeln!(TX.lock().as_mut().unwrap(), "Interrupt {} Start", level).unwrap();
-    unsafe {
-        xtensa_lx6_rt::interrupt::set(1 << 7);
-    }
-    writeln!(TX.lock().as_mut().unwrap(), "Interrupt {} End", level).unwrap();
-}
-
-#[interrupt(4)]
-#[ram]
-#[naked]
-fn interrupt_level_4() {
-    writeln!(TX.lock().as_mut().unwrap(), "Interrupt 4").unwrap();
 }
 
 #[entry]
 fn main() -> ! {
-    let dp = unsafe { esp32::Peripherals::steal() };
+    let dp = esp32::Peripherals::take().unwrap();
 
     let mut timg0 = dp.TIMG0;
     let mut timg1 = dp.TIMG1;
@@ -108,25 +157,53 @@ fn main() -> ! {
     let (tx, _) = uart0.split();
     *TX.lock() = Some(tx);
 
-    unsafe {
-        xtensa_lx6_rt::interrupt::enable_mask(1 << 7 | 1 << 29);
-        xtensa_lx6_rt::interrupt::set(1 << 29);
-        //        xtensa_lx6_rt::interrupt::disable_mask(0x00000080);
-        //        xtensa_lx6_rt::interrupt::disable_mask(xtensa_lx6_rt::get_cycle_count());
-    };
+    interrupt::enable_with_priority(PRO, Interrupt::FROM_CPU_INTR0, InterruptLevel(2)).unwrap();
+    interrupt::enable_with_priority(PRO, Interrupt::FROM_CPU_INTR1, InterruptLevel(4)).unwrap();
+    interrupt::enable_with_priority(PRO, Interrupt::FROM_CPU_INTR2, InterruptLevel(5)).unwrap();
+    interrupt::enable_with_priority(PRO, Interrupt::FROM_CPU_INTR3, InterruptLevel(7)).unwrap();
+    interrupt::enable(INTERNAL_SOFTWARE_LEVEL_1_INTR).unwrap();
+    interrupt::enable(INTERNAL_SOFTWARE_LEVEL_3_INTR).unwrap();
 
-    /*
+    // Trigger various software interrupts, because done in an interrupt free section will
+    // actually trigger at the end in order of priority
+    interrupt::free(|_| {
+        writeln!(TX.lock().as_mut().unwrap(), "Start Trigger Interrupts",).unwrap();
+        interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
+        interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR1).unwrap();
+        interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR2).unwrap();
+        // this one will trigger immediately as level 7 is Non-Maskable Intterupt (NMI)
+        interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+        interrupt::set_software_interrupt(Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR).unwrap();
+        interrupt::set_software_interrupt(Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR).unwrap();
+        writeln!(TX.lock().as_mut().unwrap(), "End Trigger Interrupts",).unwrap();
+    });
+
+    // Trigger outside of interrupt free section, triggers immediately
+    writeln!(TX.lock().as_mut().unwrap(), "Start Trigger Interrupt",).unwrap();
+    interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR0).unwrap();
+    interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR1).unwrap();
+    interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR2).unwrap();
+    // this one will trigger immediately as level 7 is Non-Maskable Intterupt (NMI)
+    interrupt::set_software_interrupt(Interrupt::FROM_CPU_INTR3).unwrap();
+    interrupt::set_software_interrupt(Interrupt::INTERNAL_SOFTWARE_LEVEL_1_INTR).unwrap();
+    interrupt::set_software_interrupt(Interrupt::INTERNAL_SOFTWARE_LEVEL_3_INTR).unwrap();
+    writeln!(TX.lock().as_mut().unwrap(), "End Trigger Interrupt",).unwrap();
+
+    // Trigger a LoadStoreError due to unaligned access in the IRAM
+
+    writeln!(TX.lock().as_mut().unwrap(), "\nTrigger exception:",).unwrap();
+
     #[link_section = ".rwtext"]
     static mut IRAM: [u8; 12] = [0; 12];
     unsafe { IRAM[1] = 10 };
-    */
 
+    // Trigger a DivideByZeroError
     unsafe { asm!("quos $0,$0,$0":"+r"(0)) }
 
     loop {
         sleep(1.s());
         xtensa_lx6_rt::interrupt::free(|_| {
-            writeln!(TX.lock().as_mut().unwrap(), "Wait for watchdog reset",).unwrap()
+            writeln!(TX.lock().as_mut().unwrap(), "Wait for watchdog reset").unwrap()
         });
     }
 }
