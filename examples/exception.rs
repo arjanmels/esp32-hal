@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(asm)]
+#![feature(llvm_asm)]
 #![feature(naked_functions)]
 
 use core::fmt::Write;
@@ -198,7 +198,7 @@ fn main() -> ! {
     unsafe { IRAM[1] = 10 };
 
     // Trigger a DivideByZeroError
-    unsafe { asm!("quos $0,$0,$0":"+r"(0)) }
+    unsafe { llvm_asm!("quos $0,$0,$0":"+r"(0)) }
 
     loop {
         sleep(1.s());

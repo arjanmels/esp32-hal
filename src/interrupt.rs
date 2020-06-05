@@ -1,13 +1,39 @@
 //! ESP32 specific interrupt handling
 //!
-//! routines and variables in this module are stored in RAM because otherwise it may lead
-//! to exceptions when the flash is programmed or erased while the interrupt is called.
+//! ESP32 uses 2-level interrupt handling: peripheral interrupts are mapped to cpu interrupts.
+//! This module redirects the cpu interrupts handler to registered peripheral interrupt handlers.
+//!
+//! Interrupt handlers are defined using the [Interrupt](attr.interrupt.html) attribute.
+//! (Note that this is a distinct attribute from the one in the [xtensa_lx6_rt](xtensa_lx6_rt)
+//! crate.)
+//!
+//! To enable the interrupt and assign to a specific interrupt level use
+//! the [enable] or [enable_with_priority] functions. (This is in addition to enabling the
+//! interrupt in the respective peripherals.)
+//!
+//! To have lowest latency possible you can use the
+//! [Interrupt](../../xtensa_lx6_rt/attr.interrupt.html) attribute from the xtensa_lx6_rt crate
+//! to define low level/naked interrupt handlers. (This will override the interrupt
+//! handling offered by this crate for that specific interrupt level. This should especially be
+//! considered when using Level 7 = Non Maskable Interrupt level as these will not be turned off
+//! during [interrupt::free](xtensa_lx6_rt::interrupt::free) sections.)
+//!
+//! **Note: If multiple edge triggered interrupts are assigned to the same [level][InterruptLevel],
+//!   it is not possible to detect which peripheral triggered the interrupt. Therefore all
+//!   registered handlers will be called.**
+//!
+//! **Note: Edge triggered interrupts can be lost when triggered after handling of another edge
+//!   triggered interrupt has started.**
+//!
+//! *Note: routines and variables in this module are stored in RAM because otherwise it may lead
+//! to exceptions when the flash is programmed or erased while the interrupt is called.*
 use crate::ram;
 
 use crate::Core::{self, APP, PRO};
 use bare_metal::Nr;
 pub use esp32::Interrupt::{self, *};
 use esp32::DPORT;
+pub use proc_macros::interrupt;
 pub use xtensa_lx6_rt::interrupt::free;
 
 /// Interrupt errors
@@ -20,8 +46,26 @@ pub enum Error {
     InvalidInterrupt,
 }
 
+/// Interrupt level.
+///
+/// Valid levels are 1 through 7. Level 6 is typically used for debug exceptions
+/// and level 7 for Non-Maskable Interrupts (NMI).
+///
+/// Level 0 is used to disable interrupts.
+///
+/// **Note: Level 7 (NMI) will not be disabled by the
+/// [interrupt::free](xtensa_lx6_rt::interrupt::free) section. This risks race conditions in
+/// various places.
+/// **
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Default)]
+pub struct InterruptLevel(pub usize);
+
 #[ram]
 const CPU_INTERRUPT_EDGE: u32 = 0b_0111_0000_0100_0000_0000_1100_1000_0000;
+
+#[ram]
+const INTERRUPT_EDGE: u128 =
+    0b_0000_0000_0000_0000_0000_0000_0000_0000__0000_0000_0000_0000_0000_0000_0000_0011__1111_1100_0000_0000_0000_0000_0000_0000__0000_0000_0000_0000_0000_0000_0000_0000;
 
 #[ram]
 const CPU_INTERRUPT_INTERNAL: u32 = 0b_0010_0000_0000_0001_1000_1000_1100_0000;
@@ -62,23 +106,24 @@ fn interrupt_level_to_cpu_interrupt(
     const INTERRUPT_LEVEL_TO_CPU_INTERRUPT_EDGE: [Option<CPUInterrupt>; 8] = [
         Some(CPUInterrupt(6)),  // Disable (assign to internal interrupt)
         Some(CPUInterrupt(10)), // Level 1 edge triggered
-        None, // Level 2 edge triggered not supported (assign to internal interrupt)
+        None,                   // Level 2 edge triggered not supported
         Some(CPUInterrupt(22)), // Level 3 edge triggered
         Some(CPUInterrupt(28)), // Level 4 edge triggered
         Some(CPUInterrupt(31)), // Level 5 edge triggered not supported
-        None, // Level 6 = Debug not supported for peripherals
+        None,                   // Level 6 = Debug not supported for peripherals
         Some(CPUInterrupt(14)), // Level 7 = NMI edge triggered
     ];
     #[ram]
     const INTERRUPT_LEVEL_TO_CPU_INTERRUPT_LEVEL: [Option<CPUInterrupt>; 8] = [
         Some(CPUInterrupt(6)),  // Disable (assign to internal interrupt)
-        Some(CPUInterrupt(1)),  // Level 1 level triggered
+        Some(CPUInterrupt(0)),  // Level 1 level triggered
         Some(CPUInterrupt(19)), // Level 2 level triggered
         Some(CPUInterrupt(23)), // Level 3 level triggered
         Some(CPUInterrupt(24)), // Level 4 level triggered
         Some(CPUInterrupt(31)), // Level 5 level triggered
         None,                   // Level 6 = Debug not supported for peripherals
-        Some(CPUInterrupt(14)), // Level 7 = NMI level triggered not supported for peripherals
+        Some(CPUInterrupt(14)), // Level 7 = NMI level triggered (not supported for peripherals,
+                                //                                      forward to edge interrupt)
     ];
     if edge {
         INTERRUPT_LEVEL_TO_CPU_INTERRUPT_EDGE[interrupt_level.0].ok_or(Error::InvalidInterruptLevel)
@@ -92,9 +137,7 @@ fn interrupt_level_to_cpu_interrupt(
 const CPU_INTERRUPT_USED_LEVELS: u32 = 0b_1001_0001_1100_1000_0100_0100_0000_0001;
 
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Default)]
-pub struct CPUInterrupt(pub usize);
-#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Hash, Default)]
-pub struct InterruptLevel(pub usize);
+struct CPUInterrupt(pub usize);
 
 fn cpu_interrupt_to_interrupt(cpu_interrupt: CPUInterrupt) -> Result<esp32::Interrupt, Error> {
     #[ram]
@@ -160,7 +203,10 @@ fn cpu_interrupt_to_level(cpu_interrupt: CPUInterrupt) -> InterruptLevel {
 }
 
 #[ram]
-static INTERRUPT_LEVELS: spin::Mutex<[u128; 8]> = spin::Mutex::new([0u128; 8]);
+static mut INTERRUPT_LEVELS: [u128; 8] = [0u128; 8];
+
+#[ram]
+static INTERRUPT_LEVELS_MUTEX: spin::Mutex<bool> = spin::Mutex::new(false);
 
 #[xtensa_lx6_rt::interrupt(1)]
 #[ram]
@@ -204,6 +250,16 @@ unsafe fn level_7_handler(level: u32) {
     handle_interrupts(level)
 }
 
+#[ram]
+unsafe fn handle_interrupt(level: u32, interrupt: Interrupt) {
+    let handler = esp32::__INTERRUPTS[interrupt.nr() as usize]._handler;
+    if handler as *const _ == DefaultHandler as *const unsafe extern "C" fn() {
+        DefaultHandler(level, interrupt);
+    } else {
+        handler();
+    }
+}
+
 #[inline(always)]
 #[ram]
 unsafe fn handle_interrupts(level: u32) {
@@ -211,7 +267,7 @@ unsafe fn handle_interrupts(level: u32) {
         & xtensa_lx6_rt::interrupt::get_mask()
         & CPU_INTERRUPT_LEVELS[level as usize];
 
-    let interrupt = if cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL != 0 {
+    if cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL != 0 {
         let cpu_interrupt_mask = cpu_interrupt_mask & CPU_INTERRUPT_INTERNAL;
         let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
 
@@ -219,29 +275,40 @@ unsafe fn handle_interrupts(level: u32) {
             xtensa_lx6_rt::interrupt::clear(1 << cpu_interrupt_nr);
         }
 
-        cpu_interrupt_to_interrupt(CPUInterrupt(cpu_interrupt_nr as usize)).unwrap()
+        // cpu_interrupt_to_interrupt can fail if interrupt already de-asserted: silently ignore
+        if let Ok(interrupt) = cpu_interrupt_to_interrupt(CPUInterrupt(cpu_interrupt_nr as usize)) {
+            handle_interrupt(level, interrupt);
+        }
     } else {
         let cpu_interrupt_mask = cpu_interrupt_mask & !CPU_INTERRUPT_INTERNAL;
-        let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
 
         if (cpu_interrupt_mask & CPU_INTERRUPT_EDGE) != 0 {
+            let cpu_interrupt_mask = cpu_interrupt_mask & CPU_INTERRUPT_EDGE;
+            let cpu_interrupt_nr = cpu_interrupt_mask.trailing_zeros();
             xtensa_lx6_rt::interrupt::clear(1 << cpu_interrupt_nr);
+
+            // for edge interrupts cannot rely on the interrupt status register, therefore call all
+            // registered handlers for current level
+            let mut interrupt_mask = INTERRUPT_LEVELS[level as usize] & INTERRUPT_EDGE;
+            loop {
+                let interrupt_nr = interrupt_mask.trailing_zeros();
+                if let Ok(interrupt) = esp32::Interrupt::try_from(interrupt_nr as u8) {
+                    handle_interrupt(level, interrupt)
+                } else {
+                    break;
+                }
+                interrupt_mask &= !(1u128 << interrupt_nr);
+            }
+        } else {
+            let interrupt_mask =
+                get_interrupt_status(crate::get_core()) & INTERRUPT_LEVELS[level as usize];
+            let interrupt_nr = interrupt_mask.trailing_zeros();
+
+            // esp32::Interrupt::try_from can fail if interrupt already de-asserted: silently ignore
+            if let Ok(interrupt) = esp32::Interrupt::try_from(interrupt_nr as u8) {
+                handle_interrupt(level, interrupt);
+            }
         }
-
-        let interrupt_mask = get_interrupt_status(crate::get_core());
-
-        let interrupt_nr =
-            (interrupt_mask & INTERRUPT_LEVELS.lock()[level as usize]).trailing_zeros();
-
-        esp32::Interrupt::try_from(interrupt_nr as u8).unwrap()
-    };
-
-    if esp32::__INTERRUPTS[interrupt.nr() as usize]._handler as *const unsafe extern "C" fn()
-        == DefaultHandler as *const unsafe extern "C" fn()
-    {
-        DefaultHandler(level, interrupt);
-    } else {
-        (esp32::__INTERRUPTS[interrupt.nr() as usize]._handler)();
     }
 }
 
@@ -253,7 +320,7 @@ extern "C" fn DefaultHandler(level: u32, interrupt: esp32::Interrupt) {
 
 /// Get status of peripheral interrupts
 #[ram]
-fn get_interrupt_status(core: Core) -> u128 {
+pub fn get_interrupt_status(core: Core) -> u128 {
     unsafe {
         match core {
             PRO => {
@@ -297,9 +364,12 @@ fn map_interrupt(
 
 /// Enable interrupt and set priority for a particular core
 ///
-/// Valid levels are 1-7. 0 is used to disable the interrupt.
+/// Valid levels are 1-7. Level 0 is used to disable the interrupt.
 ///
-/// CPU internal interrupts can only be set on the current core.
+/// *Note: CPU internal interrupts can only be set on the current core.*
+///
+/// *Note: take care when mapping multiple peripheral edge triggered interrupts to the same level:
+/// this will cause all handlers to be called.*
 #[ram]
 pub fn enable_with_priority(
     core: crate::Core,
@@ -325,16 +395,14 @@ pub fn enable_with_priority(
             let cpu_interrupt =
                 interrupt_level_to_cpu_interrupt(level, interrupt_is_edge(interrupt))?;
 
-            return xtensa_lx6_rt::interrupt::free(|_| {
-                let mut data = INTERRUPT_LEVELS.lock();
-
+            return xtensa_lx6_rt::interrupt::free(|_| unsafe {
+                let _data = INTERRUPT_LEVELS_MUTEX.lock();
                 for i in 0..=7 {
-                    (*data)[i] &= !(1 << interrupt.nr());
+                    INTERRUPT_LEVELS[i] &= !(1 << interrupt.nr());
                 }
+                INTERRUPT_LEVELS[level.0 as usize] |= 1 << interrupt.nr();
 
-                (*data)[level.0 as usize] |= 1 << interrupt.nr();
-
-                unsafe { xtensa_lx6_rt::interrupt::enable_mask(CPU_INTERRUPT_USED_LEVELS) };
+                xtensa_lx6_rt::interrupt::enable_mask(CPU_INTERRUPT_USED_LEVELS);
 
                 map_interrupt(core, interrupt, cpu_interrupt)
             });
@@ -345,6 +413,11 @@ pub fn enable_with_priority(
 /// Enable interrupt
 ///
 /// For CPU internal interrupts use the default level, for others use level 1
+///
+/// *Note: CPU internal interrupts can only be set on the current core.*
+///
+/// *Note: take care when mapping multiple peripheral edge triggered interrupts to the same level:
+/// this will cause all handlers to be called.*
 #[ram]
 pub fn enable(interrupt: Interrupt) -> Result<(), Error> {
     match interrupt_to_cpu_interrupt(interrupt) {
@@ -368,10 +441,10 @@ pub fn disable(interrupt: Interrupt) -> Result<(), Error> {
     }
 }
 
-/// Set a (cross-)core interrupt
+/// Trigger a (cross-)core interrupt
 ///
-/// Valid interrupts are 0-3. Mapping to a certain core and interrupt level is done via
-/// set_interrupt_priority.
+/// Valid interrupts are FROM_CPU_INTR[0-3],
+/// INTERNAL_SOFTWARE_LEVEL_1_INTR and INTERNAL_SOFTWARE_LEVEL_3_INTR.
 #[ram]
 pub fn set_software_interrupt(interrupt: Interrupt) -> Result<(), Error> {
     unsafe {
@@ -400,8 +473,8 @@ pub fn set_software_interrupt(interrupt: Interrupt) -> Result<(), Error> {
 
 /// Clear a (cross-)core interrupt
 ///
-/// Valid interrupts are 0-3. Mapping to a certain core and interrupt level is done via
-/// set_interrupt_priority.
+/// Valid interrupts are FROM_CPU_INTR[0-3],
+/// INTERNAL_SOFTWARE_LEVEL_1_INTR and INTERNAL_SOFTWARE_LEVEL_3_INTR.
 #[ram]
 pub fn clear_software_interrupt(interrupt: Interrupt) -> Result<(), Error> {
     unsafe {
@@ -422,7 +495,7 @@ pub fn clear_software_interrupt(interrupt: Interrupt) -> Result<(), Error> {
                 xtensa_lx6_rt::interrupt::clear(1 << interrupt_to_cpu_interrupt(interrupt)?.0)
             }
 
-            _ => return Err(Error::InvalidCore),
+            _ => return Err(Error::InvalidInterrupt),
         }
     };
     Ok(())
