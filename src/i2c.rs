@@ -1,7 +1,7 @@
 use {
     crate::{
         dprintln,
-        gpio::{InputSignal, OutputPin, OutputSignal},
+        gpio::{InputPin, InputSignal, OutputPin, OutputSignal},
         target::{i2c, DPORT, I2C0, I2C1},
     },
     core::ops::Deref,
@@ -13,7 +13,7 @@ impl<T> I2C<T>
 where
     T: Instance,
 {
-    pub fn new<SDA: OutputPin, SCL: OutputPin>(
+    pub fn new<SDA: OutputPin + InputPin, SCL: OutputPin + InputPin>(
         i2c: T,
         mut pins: Pins<SDA, SCL>,
         dport: &mut DPORT,
@@ -21,15 +21,17 @@ where
         let mut i2c = Self(i2c);
 
         pins.sda
+            .set_to_open_drain_output()
             .enable_input(true)
-            .enable_open_drain(true)
             .internal_pull_up(true)
             .connect_peripheral_to_output(OutputSignal::I2CEXT0_SDA, false, false, false)
             .connect_input_to_peripheral(InputSignal::I2CEXT0_SDA, false);
 
+        pins.sda.set_output_high(true);
+
         pins.scl
+            .set_to_open_drain_output()
             .enable_input(true)
-            .enable_open_drain(true)
             .internal_pull_up(true)
             .connect_peripheral_to_output(OutputSignal::I2CEXT0_SCL, false, false, false)
             .connect_input_to_peripheral(InputSignal::I2CEXT0_SCL, false);
@@ -285,7 +287,7 @@ where
 ///
 /// Note that any two pins may be used
 /// TODO: enforce this in the type system
-pub struct Pins<SDA: OutputPin, SCL: OutputPin> {
+pub struct Pins<SDA: OutputPin + InputPin, SCL: OutputPin + InputPin> {
     pub sda: SDA,
     pub scl: SCL,
 }

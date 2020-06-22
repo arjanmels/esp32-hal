@@ -17,8 +17,6 @@ use {
     ssd1306::{prelude::*, Builder},
 };
 
-const CORE_HZ: u32 = 10_000_000;
-
 #[no_mangle]
 fn main() -> ! {
     let dp = esp32::Peripherals::take().unwrap();
@@ -55,10 +53,6 @@ fn main() -> ! {
 
     let pins = dp.GPIO.split();
 
-    let mut rst = pins.gpio16.into_push_pull_output();
-    let sda = pins.gpio4.into_open_drain_output();
-    let scl = pins.gpio15.into_open_drain_output();
-
     let mut serial = Serial::uart0(
         dp.UART0,
         (NoTx, NoRx),
@@ -70,8 +64,17 @@ fn main() -> ! {
 
     writeln!(serial, "\n\n\nserial initialized").unwrap();
 
+    let mut rst = pins.gpio16.into_push_pull_output();
+
     let mut disp: GraphicsMode<_> = {
-        let i2c = i2c::I2C::new(dp.I2C0, i2c::Pins { sda, scl }, &mut dport);
+        let i2c = i2c::I2C::new(
+            dp.I2C0,
+            i2c::Pins {
+                sda: pins.gpio4,
+                scl: pins.gpio15,
+            },
+            &mut dport,
+        );
         Builder::new().connect_i2c(i2c).into()
     };
     writeln!(serial, "display built").unwrap();
