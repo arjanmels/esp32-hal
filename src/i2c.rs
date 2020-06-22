@@ -1,46 +1,11 @@
 use {
     crate::{
         dprintln,
-        esp32::{i2c, DPORT, GPIO, I2C0, I2C1, IO_MUX},
-        prelude::*,
+        gpio::{InputSignal, OutputPin, OutputSignal},
+        target::{i2c, DPORT, I2C0, I2C1},
     },
     core::ops::Deref,
-    embedded_hal::digital::v2::OutputPin,
 };
-
-unsafe fn gpio_matrix_out(gpio: u32, signal_idx: u32, out_inverted: bool, oen_inverted: bool) {
-    let base_address = 0x3FF44530; // GPIO_FUNC0_OUT_SEL_CFG_REG
-    let store_address = (base_address + 4 * gpio) as *mut u32;
-
-    let mut value = signal_idx;
-
-    if out_inverted {
-        value = value | 0b100_0000_0000;
-    }
-
-    if oen_inverted {
-        value = value | 0b1_0000_0000_0000;
-    }
-
-    core::ptr::write_volatile(store_address, value);
-}
-
-unsafe fn gpio_matrix_in(gpio: u32, signal_idx: u32, inverted: bool) {
-    let base_address = 0x3FF44130; // GPIO_FUNC0_IN_SEL_CFG_REG
-    let store_address = (base_address + 4 * signal_idx) as *mut u32;
-
-    let mut value = gpio;
-
-    if inverted {
-        value = value | 64;
-    }
-
-    if gpio != 52 {
-        value = value | 128;
-    }
-
-    core::ptr::write_volatile(store_address, value);
-}
 
 pub struct I2C<T>(T);
 
@@ -48,74 +13,26 @@ impl<T> I2C<T>
 where
     T: Instance,
 {
-    pub fn new<
-        SDA: OutputPin<Error = core::convert::Infallible>,
-        SCL: OutputPin<Error = core::convert::Infallible>,
-    >(
+    pub fn new<SDA: OutputPin, SCL: OutputPin>(
         i2c: T,
         mut pins: Pins<SDA, SCL>,
         dport: &mut DPORT,
     ) -> Self {
         let mut i2c = Self(i2c);
 
-        // i2c_set_pin
-        // TEMPORARY UNTIL I CORRECTLY IMPLEMENT PINS
-        // manually set sda to gpio4 and scl to gpio15
-        unsafe {
-            let gpio = &*GPIO::ptr();
-            let iomux = &*IO_MUX::ptr();
+        pins.sda
+            .enable_input(true)
+            .enable_open_drain(true)
+            .internal_pull_up(true)
+            .connect_peripheral_to_output(OutputSignal::I2CEXT0_SDA, false, false, false)
+            .connect_input_to_peripheral(InputSignal::I2CEXT0_SDA, false);
 
-            // sda
-            {
-                pins.sda.set_high().unwrap();
-                // gpio_set_level(sda_io_num, I2C_IO_INIT_LEVEL);
-                gpio.pin4.write(|w| w.pin4_pad_driver().set_bit());
-
-                // PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[sda_io_num], PIN_FUNC_GPIO);
-                // gpio_set_direction(sda_io_num, GPIO_MODE_INPUT_OUTPUT_OD);
-                // gpio_set_pull_mode(sda_io_num, GPIO_PULLUP_ONLY);
-                iomux.gpio4.modify(|_, w| {
-                    w.mcu_sel()
-                        .bits(2)
-                        .fun_wpd()
-                        .clear_bit()
-                        .fun_wpu()
-                        .set_bit()
-                        .fun_ie()
-                        .set_bit()
-                        .mcu_oe()
-                        .set_bit()
-                });
-
-                gpio_matrix_out(4, 30, false, false);
-                gpio_matrix_in(4, 30, false);
-            }
-
-            // scl
-            {
-                pins.scl.set_high().unwrap();
-                gpio.pin15.write(|w| w.pin15_pad_driver().set_bit());
-
-                // PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[scl_io_num], PIN_FUNC_GPIO);
-                // gpio_set_direction(scl_io_num, GPIO_MODE_INPUT_OUTPUT_OD);
-                // gpio_set_pull_mode(scl_io_num, GPIO_PULLUP_ONLY);
-                iomux.mtdo.modify(|_, w| {
-                    w.mcu_sel()
-                        .bits(2)
-                        .fun_ie()
-                        .set_bit()
-                        .mcu_oe()
-                        .set_bit()
-                        .fun_wpd()
-                        .clear_bit()
-                        .fun_wpu()
-                        .set_bit()
-                });
-
-                gpio_matrix_out(15, 29, false, false);
-                gpio_matrix_in(15, 29, false);
-            }
-        }
+        pins.scl
+            .enable_input(true)
+            .enable_open_drain(true)
+            .internal_pull_up(true)
+            .connect_peripheral_to_output(OutputSignal::I2CEXT0_SCL, false, false, false)
+            .connect_input_to_peripheral(InputSignal::I2CEXT0_SCL, false);
 
         // i2c_hw_enable(i2c_num);
         i2c.reset(dport);
@@ -368,10 +285,7 @@ where
 ///
 /// Note that any two pins may be used
 /// TODO: enforce this in the type system
-pub struct Pins<
-    SDA: embedded_hal::digital::v2::OutputPin,
-    SCL: embedded_hal::digital::v2::OutputPin,
-> {
+pub struct Pins<SDA: OutputPin, SCL: OutputPin> {
     pub sda: SDA,
     pub scl: SCL,
 }
