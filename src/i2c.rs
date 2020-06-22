@@ -24,8 +24,8 @@ where
             .set_to_open_drain_output()
             .enable_input(true)
             .internal_pull_up(true)
-            .connect_peripheral_to_output(OutputSignal::I2CEXT0_SDA, false, false, false)
-            .connect_input_to_peripheral(InputSignal::I2CEXT0_SDA, false);
+            .connect_peripheral_to_output(OutputSignal::I2CEXT0_SDA)
+            .connect_input_to_peripheral(InputSignal::I2CEXT0_SDA);
 
         pins.sda.set_output_high(true);
 
@@ -33,8 +33,8 @@ where
             .set_to_open_drain_output()
             .enable_input(true)
             .internal_pull_up(true)
-            .connect_peripheral_to_output(OutputSignal::I2CEXT0_SCL, false, false, false)
-            .connect_input_to_peripheral(InputSignal::I2CEXT0_SCL, false);
+            .connect_peripheral_to_output(OutputSignal::I2CEXT0_SCL)
+            .connect_input_to_peripheral(InputSignal::I2CEXT0_SCL);
 
         // i2c_hw_enable(i2c_num);
         i2c.reset(dport);
