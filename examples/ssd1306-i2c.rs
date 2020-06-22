@@ -11,7 +11,7 @@ use {
         dport::Split,
         dprintln, i2c,
         prelude::*,
-        serial::{config::Config as SerialConfig, NoRx, NoTx, Serial},
+        serial::{config::Config as SerialConfig, Serial},
         timer::Timer,
     },
     ssd1306::{prelude::*, Builder},
@@ -53,9 +53,14 @@ fn main() -> ! {
 
     let pins = dp.GPIO.split();
 
-    let mut serial = Serial::uart0(
+    let mut serial: Serial<_, _, _> = Serial::new(
         dp.UART0,
-        (NoTx, NoRx),
+        esp32_hal::serial::Pins {
+            tx: pins.gpio1,
+            rx: pins.gpio3,
+            cts: None,
+            rts: None,
+        },
         SerialConfig::default().baudrate(115200.into()),
         clkcntrl_config,
         &mut dport,
